@@ -3,9 +3,14 @@
 set -e
 set -o pipefail
 
-npm install -g 9router cloudflared
+startup_log=/tmp/codespace-startup.log
+printf '[startup] %s\n' "$(date -Is)" >> "$startup_log"
+
+npm install -g --allow-scripts=9router,cloudflared 9router cloudflared >>"$startup_log" 2>&1
 export INITIAL_PASSWORD="123456"
-nohup 9router --no-browser --log --skip-update >/tmp/9router.log 2>&1 &
+if ! (echo >/dev/tcp/127.0.0.1/20128) >/dev/null 2>&1; then
+	nohup setsid 9router --no-browser --log --skip-update >/tmp/9router.log 2>&1 </dev/null &
+fi
 
 for attempt in {1..30}; do
 	if (echo >/dev/tcp/127.0.0.1/20128) >/dev/null 2>&1; then
@@ -20,10 +25,12 @@ if ! (echo >/dev/tcp/127.0.0.1/20128) >/dev/null 2>&1; then
 	exit 1
 fi
 
+printf '[startup] 9router is listening on http://localhost:20128\n' | tee -a "$startup_log"
 stdbuf -oL -eL cloudflared tunnel --url http://localhost:20128 2>&1 | while IFS= read -r line; do
 	printf '%s\n' "$line"
+	printf '%s\n' "$line" >> "$startup_log"
 	tunnel_url=$(printf '%s\n' "$line" | grep -oE 'https://[A-Za-z0-9.-]+\.trycloudflare\.com' | head -n 1 || true)
 	if [[ -n "$tunnel_url" ]]; then
-		printf '\nCLOUDFLARE_TUNNEL_URL=%s\n\n' "$tunnel_url"
+		printf '\nCLOUDFLARE_TUNNEL_URL=%s\n\n' "$tunnel_url" | tee -a "$startup_log"
 	fi
 done

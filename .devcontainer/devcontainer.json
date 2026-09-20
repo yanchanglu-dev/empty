@@ -1,5 +1,6 @@
 {
   "name": "empty",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
-  "postStartCommand": "bash .devcontainer/startup.sh"
+  "postStartCommand": "bash .devcontainer/startup.sh",
+  "postAttachCommand": "bash .devcontainer/ensure-services.sh"
 }
