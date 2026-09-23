@@ -27,24 +27,7 @@ fi
 
 printf '[startup] 9router is listening on http://localhost:20128\n' | tee -a "$startup_log"
 
-if ! pgrep -f '[c]loudflared tunnel --url http://localhost:20128' >/dev/null; then
-	nohup setsid bash -c '
-		stdbuf -oL -eL cloudflared tunnel --url http://localhost:20128 2>&1 |
-		while IFS= read -r line; do
-			printf "%s\\n" "$line" >> /tmp/codespace-startup.log
-			tunnel_url=$(printf "%s\\n" "$line" | grep -oE "https://[A-Za-z0-9.-]+\\.trycloudflare\\.com" | head -n 1 || true)
-			if [[ -n "$tunnel_url" ]]; then
-				printf "CLOUDFLARE_TUNNEL_URL=%s\\n" "$tunnel_url" >> /tmp/codespace-startup.log
-			fi
-		done
-	' >/tmp/cloudflared.log 2>&1 </dev/null &
+if ! pgrep -f '[c]loudflared tunnel run --token' >/dev/null; then
+	nohup setsid cloudflared tunnel run --token eyJhIjoiY2M5MzRiYTYwYjc2Y2YwYmMwMDFhMmIyNzllYzlkYWYiLCJ0IjoiNjYzYTQ0MGMtMTUzNS00Y2QyLTk1OTEtYmI2MTE3ODdiODc1IiwicyI6IlpUUmtOVFF3TnprdFpUQTFOaTAwTXpZMExUaGpNRFl0WWpVNU9EbGtaVFZsWW1FeCJ9 >/tmp/cloudflared.log 2>&1 </dev/null &
+    printf '[startup] fixed Cloudflare tunnel started\n' | tee -a "$startup_log"
 fi
-
-for attempt in {1..30}; do
-	if grep -q '^CLOUDFLARE_TUNNEL_URL=' "$startup_log" 2>/dev/null; then
-		break
-	fi
-	sleep 1
-done
-
-grep '^CLOUDFLARE_TUNNEL_URL=' "$startup_log" 2>/dev/null || true
