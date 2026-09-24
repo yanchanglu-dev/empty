@@ -30,18 +30,21 @@ printf '[startup] 9router is listening on http://localhost:20128\n' | tee -a "$s
 keys_cookie=$(mktemp)
 keys_response=$(mktemp)
 trap 'rm -f "$keys_cookie" "$keys_response"' EXIT
-login_status=$(curl -sS -o "$keys_response" -w '%{http_code}' \
-	-c "$keys_cookie" \
-	-X POST http://127.0.0.1:20128/api/auth/login \
-	-H 'content-type: application/json' \
-	--data "{\"password\":\"${INITIAL_PASSWORD}\"}")
-if [[ "$login_status" == 200 ]]; then
-	keys_status=$(curl -sS -o "$keys_response" -w '%{http_code}' \
-		-b "$keys_cookie" \
-		http://127.0.0.1:20128/api/keys)
-	if [[ "$keys_status" == 200 ]]; then
-		printf '[startup] 9router keys:\n' | tee -a "$startup_log"
-		keys=$(node -e '
+keys=''
+login_status=''
+keys_status=''
+for attempt in {1..10}; do
+	login_status=$(curl -sS -o "$keys_response" -w '%{http_code}' \
+		-c "$keys_cookie" \
+		-X POST http://127.0.0.1:20128/api/auth/login \
+		-H 'content-type: application/json' \
+		--data "{\"password\":\"${INITIAL_PASSWORD}\"}" || true)
+	if [[ "$login_status" == "200" ]]; then
+		keys_status=$(curl -sS -o "$keys_response" -w '%{http_code}' \
+			-b "$keys_cookie" \
+			http://127.0.0.1:20128/api/keys || true)
+		if [[ "$keys_status" == "200" ]]; then
+			keys=$(node -e '
 const fs = require("fs");
 const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 const keys = [];
@@ -52,17 +55,21 @@ const visit = (value) => {
 };
 visit(payload);
 console.log([...new Set(keys)].join("\n"));
-' "$keys_response" 2>/dev/null || true)
-		if [[ -n "$keys" ]]; then
-			printf '%s\n' "$keys" | tee -a "$startup_log"
-		else
-			printf '[startup] warning: no sk- key found in /api/keys response\n' | tee -a "$startup_log" >&2
+			' "$keys_response" 2>/dev/null || true)
+			if [[ -n "$keys" ]]; then
+				break
+			fi
 		fi
-	else
-		printf '[startup] warning: /api/keys returned HTTP %s\n' "$keys_status" | tee -a "$startup_log" >&2
 	fi
-else
+	sleep 1
+done
+
+if [[ -n "$keys" ]]; then
+	printf '[startup] 9router keys:\n%s\n' "$keys" | tee -a "$startup_log"
+elif [[ "$login_status" != "200" ]]; then
 	printf '[startup] warning: login returned HTTP %s; could not query /api/keys\n' "$login_status" | tee -a "$startup_log" >&2
+else
+	printf '[startup] warning: /api/keys returned HTTP %s or contained no sk- key\n' "$keys_status" | tee -a "$startup_log" >&2
 fi
 
 if ! pgrep -f '[c]loudflared tunnel run --token' >/dev/null; then
