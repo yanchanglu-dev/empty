@@ -27,6 +27,27 @@ fi
 
 printf '[startup] 9router is listening on http://localhost:20128\n' | tee -a "$startup_log"
 
+keys_cookie=$(mktemp)
+keys_response=$(mktemp)
+trap 'rm -f "$keys_cookie" "$keys_response"' EXIT
+login_status=$(curl -sS -o "$keys_response" -w '%{http_code}' \
+	-c "$keys_cookie" \
+	-X POST http://127.0.0.1:20128/api/auth/login \
+	-H 'content-type: application/json' \
+	--data "{\"password\":\"${INITIAL_PASSWORD}\"}")
+if [[ "$login_status" == 200 ]]; then
+	keys_status=$(curl -sS -o "$keys_response" -w '%{http_code}' \
+		-b "$keys_cookie" \
+		http://127.0.0.1:20128/api/keys)
+	if [[ "$keys_status" == 200 ]]; then
+		printf '[startup] current 9router keys: %s\n' "$(cat "$keys_response")" | tee -a "$startup_log"
+	else
+		printf '[startup] warning: /api/keys returned HTTP %s\n' "$keys_status" | tee -a "$startup_log" >&2
+	fi
+else
+	printf '[startup] warning: login returned HTTP %s; could not query /api/keys\n' "$login_status" | tee -a "$startup_log" >&2
+fi
+
 if ! pgrep -f '[c]loudflared tunnel run --token' >/dev/null; then
 	nohup setsid cloudflared tunnel run --token eyJhIjoiY2M5MzRiYTYwYjc2Y2YwYmMwMDFhMmIyNzllYzlkYWYiLCJ0IjoiNjYzYTQ0MGMtMTUzNS00Y2QyLTk1OTEtYmI2MTE3ODdiODc1IiwicyI6IlpUUmtOVFF3TnprdFpUQTFOaTAwTXpZMExUaGpNRFl0WWpVNU9EbGtaVFZsWW1FeCJ9 >/tmp/cloudflared.log 2>&1 </dev/null &
     printf '[startup] fixed Cloudflare tunnel started\n' | tee -a "$startup_log"
