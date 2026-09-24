@@ -40,7 +40,24 @@ if [[ "$login_status" == 200 ]]; then
 		-b "$keys_cookie" \
 		http://127.0.0.1:20128/api/keys)
 	if [[ "$keys_status" == 200 ]]; then
-		printf '[startup] current 9router keys: %s\n' "$(cat "$keys_response")" | tee -a "$startup_log"
+		printf '[startup] 9router keys:\n' | tee -a "$startup_log"
+		keys=$(node -e '
+const fs = require("fs");
+const payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+const keys = [];
+const visit = (value) => {
+  if (typeof value === "string" && /^sk-[A-Za-z0-9_-]+$/.test(value)) keys.push(value);
+  else if (Array.isArray(value)) value.forEach(visit);
+  else if (value && typeof value === "object") Object.values(value).forEach(visit);
+};
+visit(payload);
+console.log([...new Set(keys)].join("\n"));
+' "$keys_response" 2>/dev/null || true)
+		if [[ -n "$keys" ]]; then
+			printf '%s\n' "$keys" | tee -a "$startup_log"
+		else
+			printf '[startup] warning: no sk- key found in /api/keys response\n' | tee -a "$startup_log" >&2
+		fi
 	else
 		printf '[startup] warning: /api/keys returned HTTP %s\n' "$keys_status" | tee -a "$startup_log" >&2
 	fi
